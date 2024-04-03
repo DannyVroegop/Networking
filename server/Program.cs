@@ -46,6 +46,7 @@ class ServerUDP
         return userIP;
     }
 
+    // Convert object to byte array
     public static byte[] ObjectToByte(Object obj)
     {
         BinaryFormatter b = new BinaryFormatter();
@@ -56,6 +57,7 @@ class ServerUDP
         }
     }
 
+    // Convert byte array to Message type
     public static Message ByteToMessage(byte[] arr)
     {
         using (var memStream = new MemoryStream())
@@ -70,18 +72,21 @@ class ServerUDP
 
     public void CreateSocket()
     {
-        byte[] buffer = new byte[1000];
         Socket sock;
 
-        IPAddress iPAddress = getIP();
 
-        IPEndPoint ServerEndpoint = new IPEndPoint(iPAddress, 32000);
-        IPEndPoint localEndpoint = new IPEndPoint(iPAddress, 32000);
-        IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
-        EndPoint remoteEP = (EndPoint) sender;
-
-        sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
-        sock.Bind(localEndpoint);
+        try
+        {
+            IPAddress iPAddress = getIP();
+            IPEndPoint localEndpoint = new IPEndPoint(iPAddress, 32000);
+            sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            sock.Bind(localEndpoint);
+        }
+        catch
+        {
+            throw new ArgumentException("oops", nameof(sock));
+        }
+        
     }
 
     
@@ -93,7 +98,12 @@ class ServerUDP
     //TODO: [Receive Hello]
     public void ReceiveHello(Socket sock)
     {
-        byte[] buffer = 
+        byte[] buffer = new byte[1000]; 
+        IPAddress ipAddress = getIP();   
+        IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
+        EndPoint remoteEP = (EndPoint) sender;
+        int b = sock.ReceiveFrom(buffer, ref remoteEP);
+        string data = Encoding.ASCII.GetString(buffer, 0, b);
     }
 
     //TODO: [Send Welcome]

@@ -1,0 +1,15 @@
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\bin\Debug\net6.0\client.exe
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\bin\Debug\net6.0\client.deps.json
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\bin\Debug\net6.0\client.runtimeconfig.json
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\bin\Debug\net6.0\client.dll
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\bin\Debug\net6.0\client.pdb
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\client.GeneratedMSBuildEditorConfig.editorconfig
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\client.AssemblyInfoInputs.cache
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\client.AssemblyInfo.cs
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\client.csproj.CoreCompileInputs.cache
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\client.sourcelink.json
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\client.dll
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\refint\client.dll
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\client.pdb
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\client.genruntimeconfig.cache
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\client\obj\Debug\net6.0\ref\client.dll

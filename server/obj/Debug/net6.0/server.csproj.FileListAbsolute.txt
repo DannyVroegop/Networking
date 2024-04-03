@@ -1,0 +1,15 @@
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\bin\Debug\net6.0\server.exe
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\bin\Debug\net6.0\server.deps.json
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\bin\Debug\net6.0\server.runtimeconfig.json
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\bin\Debug\net6.0\server.dll
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\bin\Debug\net6.0\server.pdb
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\server.GeneratedMSBuildEditorConfig.editorconfig
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\server.AssemblyInfoInputs.cache
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\server.AssemblyInfo.cs
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\server.csproj.CoreCompileInputs.cache
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\server.sourcelink.json
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\server.dll
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\refint\server.dll
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\server.pdb
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\server.genruntimeconfig.cache
+D:\Dannyzard\Documents\Informatica\Jaar 2\Semester 2\Networking\server\obj\Debug\net6.0\ref\server.dll

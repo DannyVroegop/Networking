@@ -27,59 +27,63 @@ class Program
 
 class ClientUDP
 {
+    Socket sock { get; set; }
 
     //TODO: implement all necessary logic to create sockets and handle incoming messages
     // Do not put all the logic into one method. Create multiple methods to handle different tasks.
     public void start()
     {
-
+        sock = createSocket();
+        if (sock != null)
+        {
+            SendHello(sock, 20);
+        }
     }
     //TODO: create all needed objects for your sockets 
 
         public IPAddress getIP()
     {
+        /*
         string hostName = Dns.GetHostName();
         IPAddress userIP = Dns.GetHostByName(hostName).AddressList[0];
         return userIP;
+        */
+        IPAddress ip = IPAddress.Parse("127.0.0.1");
+        return ip;
+    
     }
 
     public Socket? createSocket()
     {
         Socket sock;
         try {
+            Console.WriteLine(getIP());
+            IPAddress ip = getIP();
             sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            
             return sock;
         }
         catch
         {
-            throw new ArgumentException("Socket could not be created", nameof(sock));
+            throw new ArgumentException("Socket could not be created! [CLIENT]", nameof(sock));
         }
     }
 
     //TODO: [Send Hello message]
-    public static byte[] ObjectToByte(Object obj)
+    public static string ObjectToJson(Object obj)
     {
-        BinaryFormatter b = new BinaryFormatter();
-        using (var ms = new MemoryStream())
-        {
-            b.Serialize(ms, obj);
-            return ms.ToArray();
-        }
+        string json = JsonSerializer.Serialize(obj);
+        return json;
+    }
+    
+
+    public static Message JsonToMessage(string json)
+    {
+        Message? msg = JsonSerializer.Deserialize<Message>(json);
+        return msg;
     }
 
-    public static Message ByteToMessage(byte[] arr)
-    {
-        using (var memStream = new MemoryStream())
-        {
-            var binForm  = new BinaryFormatter();
-            memStream.Write(arr, 0, arr.Length);
-            memStream.Seek(0, SeekOrigin.Begin);
-            Object message = binForm.Deserialize(memStream);
-            return (Message)message;
-        }
-    }
-
-    public void SendHello(Socket sock)
+    public void SendHello(Socket sock, int thershold = 20)
     {
         byte[] buffer = new byte[1000];
 
@@ -91,8 +95,10 @@ class ClientUDP
 
         Message message = new();
         message.Type = MessageType.Hello;
-        message.Content = "1";
-        byte[] send_data = ObjectToByte(message);
+        message.Content = thershold.ToString();
+        byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
+
+        
 
         sock.SendTo(send_data, remoteEP);
     }

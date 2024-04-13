@@ -49,8 +49,9 @@ class ServerUDP
             }
             if (clientConnected == false)
             {
-                awaitclient();
+                //awaitclient();
             }
+            ReceiveHello();
         }
     }
 
@@ -62,8 +63,8 @@ class ServerUDP
         {
             Console.Write(".");
             dotcount++;
-            Thread.Sleep(10000);
-            if (dotcount == 3);
+            Thread.Sleep(1000);
+            if (dotcount == 3)
             {
                 Console.Write("\b\b\b   \b\b\b");
                 dotcount = 0;
@@ -110,6 +111,7 @@ class ServerUDP
         catch (Exception ex)
         {
             Console.Write("ERROR\n");
+            running = false;
             throw new ArgumentException($"{ex}  -  Socket could not be created! [SERVER]", nameof(sock));
         }
         
@@ -149,7 +151,7 @@ class ServerUDP
         {
             byte[] buffer = new byte[1000]; 
             IPAddress ipAddress = getIP();   
-            IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
+            IPEndPoint sender = new IPEndPoint(ipAddress, 0);
             EndPoint remoteEP = (EndPoint) sender;
             int b = socket.ReceiveFrom(buffer, ref remoteEP);
             string data = Encoding.ASCII.GetString(buffer, 0, b);

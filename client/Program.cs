@@ -43,13 +43,13 @@ class ClientUDP
 
         public IPAddress getIP()
     {
-        /*
+        
         string hostName = Dns.GetHostName();
         IPAddress userIP = Dns.GetHostByName(hostName).AddressList[0];
         return userIP;
-        */
-        IPAddress ip = IPAddress.Parse("127.0.0.1");
-        return ip;
+        
+        // IPAddress ip = IPAddress.Parse("127.0.0.1");
+        // return ip;
     
     }
 
@@ -57,9 +57,8 @@ class ClientUDP
     {
         Socket sock;
         try {
-            Console.WriteLine(getIP());
             IPAddress ip = getIP();
-            sock = new Socket(AddressFamily.InterNetwork, SocketType.Dgram, ProtocolType.Udp);
+            sock = new Socket(ip.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
             
             return sock;
         }
@@ -90,7 +89,7 @@ class ClientUDP
         IPAddress iPAddress = getIP();
 
         IPEndPoint ServerEndpoint = new IPEndPoint(iPAddress, 32000);
-        IPEndPoint sender = new IPEndPoint(IPAddress.Any, 0);
+        IPEndPoint sender = new IPEndPoint(iPAddress, 0);
         EndPoint remoteEP = (EndPoint) sender;
 
         Message message = new();
@@ -100,7 +99,7 @@ class ClientUDP
 
         
 
-        sock.SendTo(send_data, remoteEP);
+        sock.SendTo(send_data, send_data.Length, SocketFlags.None, remoteEP);
     }
 
     //TODO: [Receive Welcome]

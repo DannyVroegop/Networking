@@ -167,9 +167,15 @@ class ServerUDP
     {
         if (clientConnected == false)
         {
-            Console.WriteLine($"Server has recieved an hello, threshold of {message.Content}. Sending Welcome...");
-            clientThreshold = int.Parse(message.Content);
-            SendWelcome(clientendpoint);
+            try {
+                Console.WriteLine($"Server has recieved an hello, threshold of {message.Content}. Sending Welcome...");
+                clientThreshold = int.Parse(message.Content);
+                SendWelcome(clientendpoint);
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Invalid message thershold recieved, are you certain the content is a number?");
+            }
         }
     }
 

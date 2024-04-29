@@ -36,14 +36,14 @@ class ServerUDP
     bool running = false;
     Socket socket { get; set; }
     bool clientConnected { get; set; }
+    int clientThreshold = 0;
 
     public void start()
     {
         running = true;
-
-        CreateSocket();
         
         Console.Write("Attempting to start server...");
+        CreateSocket();
         
         byte[] buffer = new byte[1000]; 
         while (running)
@@ -60,8 +60,9 @@ class ServerUDP
                 }
                 int bytes = socket.ReceiveFrom(buffer, ref clientendpoint);
 
-                String data = Encoding.UTF8.GetString(buffer, 0, bytes);
-                Console.WriteLine(data);
+                string data = Encoding.UTF8.GetString(buffer, 0, bytes);
+                Message message = JsontoMessage(data);
+                HandleData(message, clientendpoint);
             }
             catch (Exception ex)
             {
@@ -73,6 +74,19 @@ class ServerUDP
             }
             
             
+        }
+    }
+
+    public void HandleData(Message message, EndPoint clientendpoint)
+    {
+        switch(message.Type)
+        {
+            case MessageType.Hello:
+                ReceiveHello(message, clientendpoint);
+                break;
+            default:
+                Console.WriteLine("Invalid message type => Client -> Server");
+                break;
         }
     }
 
@@ -149,16 +163,32 @@ class ServerUDP
     // you can call a dedicated method to handle each received type of messages
 
     //TODO: [Receive Hello]
-    public void ReceiveHello()
+    public void ReceiveHello(Message message, EndPoint clientendpoint)
     {
         if (clientConnected == false)
         {
-            
+            Console.WriteLine($"Server has recieved an hello, thershold of {message.Content}. Sending Welcome...");
+            clientThreshold = int.Parse(message.Content);
+            SendWelcome(clientendpoint);
         }
     }
 
     //TODO: [Send Welcome]
-
+    public void SendWelcome(EndPoint clientendpoint)
+    {
+        try{
+            Message message = new();
+            message.Type = MessageType.Welcome;
+            message.Content = null;
+            byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
+            socket.SendTo(send_data, clientendpoint);
+            Console.WriteLine("Welcome has been sent to client, awaiting data request before connecting.");
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine($"There has been an error sending the welcome message!: {ex.Message}");
+        }
+    }
     //TODO: [Receive RequestData]
 
     //TODO: [Send Data]

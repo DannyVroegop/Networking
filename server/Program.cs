@@ -40,42 +40,46 @@ class ServerUDP
     public void start()
     {
         running = true;
+
+        CreateSocket();
+        
         Console.Write("Attempting to start server...");
+        
+        byte[] buffer = new byte[1000]; 
         while (running)
         {
+            try
+            {
+                EndPoint clientendpoint;
+                try{
+                    clientendpoint = new IPEndPoint(IPAddress.IPv6Any, 0);
+                }
+                catch (Exception ex)
+                {
+                    clientendpoint = new IPEndPoint(IPAddress.Any, 0);
+                }
+                int bytes = socket.ReceiveFrom(buffer, ref clientendpoint);
+
+                String data = Encoding.UTF8.GetString(buffer, 0, bytes);
+                Console.WriteLine(data);
+            }
+            catch (Exception ex)
+            {
+                throw new ArgumentException("There was an error recieving data!", ex);
+            }
             if (socket == null)
             {
                 CreateSocket();
             }
-            if (clientConnected == false)
-            {
-                //awaitclient();
-            }
-            ReceiveHello();
-        }
-    }
-
-    private void awaitclient()
-    {
-        Console.Write("Awaiting client");
-        int dotcount = 0;
-        while (clientConnected == false)
-        {
-            Console.Write(".");
-            dotcount++;
-            Thread.Sleep(1000);
-            if (dotcount == 3)
-            {
-                Console.Write("\b\b\b   \b\b\b");
-                dotcount = 0;
-            }
+            
+            
         }
     }
 
     public IPAddress getIP()
     {
         string hostName = Dns.GetHostName();
-        IPAddress userIP = Dns.GetHostByName(hostName).AddressList[0];
+        IPAddress userIP = Dns.GetHostEntry(hostName).AddressList[0];
         return userIP;
         
     }
@@ -106,7 +110,7 @@ class ServerUDP
             sock = new Socket(iPAddress.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
             sock.Bind(localEndpoint);
             socket = sock;
-            Console.Write("SUCCEEDED\n");
+            Console.Write("SUCCEEDED..Listening on port 32000\n");
         }
         catch (Exception ex)
         {
@@ -149,14 +153,7 @@ class ServerUDP
     {
         if (clientConnected == false)
         {
-            byte[] buffer = new byte[1000]; 
-            IPAddress ipAddress = getIP();   
-            IPEndPoint sender = new IPEndPoint(ipAddress, 0);
-            EndPoint remoteEP = (EndPoint) sender;
-            int b = socket.ReceiveFrom(buffer, ref remoteEP);
-            string data = Encoding.ASCII.GetString(buffer, 0, b);
-            clientConnected = true;
-            Console.WriteLine(data);
+            
         }
     }
 

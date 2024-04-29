@@ -84,8 +84,6 @@ class ClientUDP
 
     public void SendHello(Socket sock, int thershold = 20)
     {
-        byte[] buffer = new byte[1000];
-
         IPAddress iPAddress = getIP();
 
         IPEndPoint ServerEndpoint = new IPEndPoint(iPAddress, 32000);
@@ -95,11 +93,11 @@ class ClientUDP
         Message message = new();
         message.Type = MessageType.Hello;
         message.Content = thershold.ToString();
-        byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
+        byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
 
         
 
-        sock.SendTo(send_data, send_data.Length, SocketFlags.None, remoteEP);
+        sock.SendTo(send_data, ServerEndpoint);
     }
 
     //TODO: [Receive Welcome]

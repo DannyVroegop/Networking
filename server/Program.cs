@@ -167,7 +167,7 @@ class ServerUDP
     {
         if (clientConnected == false)
         {
-            Console.WriteLine($"Server has recieved an hello, thershold of {message.Content}. Sending Welcome...");
+            Console.WriteLine($"Server has recieved an hello, threshold of {message.Content}. Sending Welcome...");
             clientThreshold = int.Parse(message.Content);
             SendWelcome(clientendpoint);
         }
@@ -182,7 +182,7 @@ class ServerUDP
             message.Content = null;
             byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
             socket.SendTo(send_data, clientendpoint);
-            Console.WriteLine("Welcome has been sent to client, awaiting data request before connecting.");
+            Console.WriteLine("Welcome message has been sent to client, awaiting data request before connecting.");
         }
         catch(Exception ex)
         {

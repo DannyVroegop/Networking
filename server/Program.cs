@@ -7,6 +7,7 @@ using System.Runtime.Serialization.Formatters.Binary;
 using System.Text;
 using System.Text.Json;
 using MessageNS;
+using System.IO;
 
 
 // Do not modify this class
@@ -34,9 +35,10 @@ class ServerUDP
     //TODO: implement all necessary logic to create sockets and handle incoming messages
     // Do not put all the logic into one method. Create multiple methods to handle different tasks.
     bool running = false;
-    Socket socket { get; set; }
+    Socket? socket { get; set; }
     bool clientConnected { get; set; }
     int clientThreshold = 0;
+    bool HelloRecieved = false;
 
     public void start()
     {
@@ -46,7 +48,7 @@ class ServerUDP
         CreateSocket();
         
         byte[] buffer = new byte[1000]; 
-        while (running)
+        while (running && socket != null)
         {
             try
             {
@@ -56,12 +58,13 @@ class ServerUDP
                 }
                 catch (Exception ex)
                 {
+                    Console.WriteLine("Client does not use IP6", ex);
                     clientendpoint = new IPEndPoint(IPAddress.Any, 0);
                 }
                 int bytes = socket.ReceiveFrom(buffer, ref clientendpoint);
 
-                string data = Encoding.UTF8.GetString(buffer, 0, bytes);
-                Message message = JsontoMessage(data);
+                string data = Encoding.ASCII.GetString(buffer, 0, bytes);
+                Message? message = JsontoMessage(data);
                 HandleData(message, clientendpoint);
             }
             catch (Exception ex)
@@ -77,17 +80,27 @@ class ServerUDP
         }
     }
 
-    public void HandleData(Message message, EndPoint clientendpoint)
+    public void HandleData(Message? message, EndPoint clientendpoint)
     {
-        switch(message.Type)
+        if (message == null)
         {
-            case MessageType.Hello:
-                ReceiveHello(message, clientendpoint);
-                break;
-            default:
-                Console.WriteLine("Invalid message type => Client -> Server");
-                break;
+            Console.WriteLine("Recieved message is of type: NULL.");
         }
+        else{
+            switch(message.Type)
+            {
+                case MessageType.Hello:
+                    ReceiveHello(message, clientendpoint);
+                    break;
+                case MessageType.RequestData:
+                    ReceiveRequestData(clientendpoint, message);
+                    break;
+                default:
+                    Console.WriteLine("Invalid message type => Client -> Server");
+                    break;
+            }
+        }
+        
     }
 
     public IPAddress getIP()
@@ -106,10 +119,14 @@ class ServerUDP
     }
 
     // Convert byte array to Message type
-    public static Message JsontoMessage(string json)
+    public static Message? JsontoMessage(string json)
     {
-        Message? msg = JsonSerializer.Deserialize<Message>(json);
-        return msg;
+        try
+        {
+            Message? msg = JsonSerializer.Deserialize<Message>(json);
+            return msg;
+        }
+        catch (Exception ex) { Console.WriteLine($"Message: {json} cannot be converted to a Message! [SERVER]", ex); return default;}
     }
 
     public void CreateSocket()
@@ -165,17 +182,27 @@ class ServerUDP
     //TODO: [Receive Hello]
     public void ReceiveHello(Message message, EndPoint clientendpoint)
     {
-        if (clientConnected == false)
+        if (clientConnected == false || HelloRecieved == false)
         {
             try {
-                Console.WriteLine($"Server has recieved an hello, threshold of {message.Content}. Sending Welcome...");
+                Console.WriteLine($"Server has recieved a hello, threshold of {message.Content}. Sending Welcome...");
+                if (message.Content == null)
+                {
+                    Console.WriteLine("Invalid threshold format in Hello!, terminating connection attempt..");
+                    return;
+                }
                 clientThreshold = int.Parse(message.Content);
+                HelloRecieved = true;
                 SendWelcome(clientendpoint);
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Invalid message thershold recieved, are you certain the content is a number?");
+                Console.WriteLine("Invalid message thershold recieved, are you certain the content is a number?", ex);
             }
+        }
+        else if (HelloRecieved == true)
+        {
+            Console.WriteLine("Server has already recieved an hello!");
         }
     }
 
@@ -185,14 +212,52 @@ class ServerUDP
         try{
             Message message = new();
             message.Type = MessageType.Welcome;
-            message.Content = null;
+            message.Content = "";
             byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
-            socket.SendTo(send_data, clientendpoint);
+            socket?.SendTo(send_data, clientendpoint);
             Console.WriteLine("Welcome message has been sent to client, awaiting data request before connecting.");
         }
         catch(Exception ex)
         {
             Console.WriteLine($"There has been an error sending the welcome message!: {ex.Message}");
+        }
+    }
+
+    public void ReceiveRequestData(EndPoint clientendpoint, Message message)
+    {
+        if(clientConnected == true || HelloRecieved == true)
+        {
+            if (message.Content != null)
+            {
+                string requestedfile = message.Content;
+                try
+                {
+                    var path = Path.Combine(Directory.GetCurrentDirectory(), requestedfile);
+                    try
+                    {
+                        StreamReader sr = new StreamReader(path);
+                        using (sr)
+                        {
+                            while(sr.Peek() >= 0)
+                            {
+                                Console.Write((char)sr.Read());
+                            }
+                        }
+                    }
+                    catch
+                    {
+                        Console.WriteLine("There has been a problem reading the requested file");
+                    }
+                }
+                catch (Exception ex)
+                {
+                    Console.WriteLine($"File {message.Content} could not be found! ", ex);
+                }
+            }
+        }
+        else if (HelloRecieved == false)
+        {
+            Console.WriteLine("Server recieved RequestData before Hello, Invalid order");
         }
     }
     //TODO: [Receive RequestData]

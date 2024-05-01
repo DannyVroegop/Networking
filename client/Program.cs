@@ -28,29 +28,57 @@ class Program
 class ClientUDP
 {
     Socket sock { get; set; }
+    bool running = false;
 
     //TODO: implement all necessary logic to create sockets and handle incoming messages
     // Do not put all the logic into one method. Create multiple methods to handle different tasks.
     public void start()
     {
+        running = true;
         sock = createSocket();
+        Console.WriteLine("Client is starting...Attempting to send Hello");
+        
         if (sock != null)
+            {
+                SendHello(sock, 20);
+            }
+
+        byte[] buffer = new byte[1000];
+        while (running)
         {
-            SendHello(sock, 20);
+            EndPoint serverendpoint;
+                try{
+                    serverendpoint = new IPEndPoint(IPAddress.IPv6Any, 0);
+                }
+                catch (Exception ex)
+                {
+                    serverendpoint = new IPEndPoint(IPAddress.Any, 0);
+                }
+                int bytes = sock.ReceiveFrom(buffer, ref serverendpoint);
+
+                string data = Encoding.ASCII.GetString(buffer, 0, bytes);
+                Message message = JsontoMessage(data);
+                HandleData(message, serverendpoint);
         }
     }
     //TODO: create all needed objects for your sockets 
 
-        public IPAddress getIP()
+    public void HandleData(Message message, EndPoint clientendpoint)
     {
-        
+        switch(message.Type)
+        {
+            default:
+                Console.WriteLine("Invalid message type => Client -> Server");
+                break;
+        }
+    }
+
+    public IPAddress getIP()
+    {
         string hostName = Dns.GetHostName();
-        IPAddress userIP = Dns.GetHostByName(hostName).AddressList[0];
+        IPAddress userIP = Dns.GetHostEntry(hostName).AddressList[0];
         return userIP;
         
-        // IPAddress ip = IPAddress.Parse("127.0.0.1");
-        // return ip;
-    
     }
 
     public Socket? createSocket()
@@ -76,10 +104,14 @@ class ClientUDP
     }
     
 
-    public static Message JsonToMessage(string json)
+    public static Message? JsontoMessage(string json)
     {
-        Message? msg = JsonSerializer.Deserialize<Message>(json);
-        return msg;
+        try
+        {
+            Message? msg = JsonSerializer.Deserialize<Message>(json);
+            return msg;
+        }
+        catch (Exception ex) { Console.WriteLine($"Message: {json} cannot be converted to a Message! [SERVER]", ex); return default;}
     }
 
     public void SendHello(Socket sock, int thershold = 20)
@@ -93,11 +125,21 @@ class ClientUDP
         Message message = new();
         message.Type = MessageType.Hello;
         message.Content = thershold.ToString();
-        byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
+        byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
 
         
 
         sock.SendTo(send_data, ServerEndpoint);
+    }
+
+    public void ReceiveWelcome(IPEndPoint serverEndpoint)
+    {
+        try
+        {
+            byte[] buffer = new byte[1000];
+            EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 32000);
+            
+        }
     }
 
     //TODO: [Receive Welcome]

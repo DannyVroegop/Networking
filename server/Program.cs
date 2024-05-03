@@ -8,6 +8,7 @@ using System.Text;
 using System.Text.Json;
 using MessageNS;
 using System.IO;
+using System.Data;
 
 
 // Do not modify this class
@@ -40,18 +41,23 @@ class ServerUDP
     int clientThreshold = 0;
     bool HelloRecieved = false;
     public EndPoint? connectedClient {get; private set;}
+    bool allDataSent = false;
 
     Dictionary<string, string> sentmessages = new Dictionary<string, string>(); //Stores sent messages, when an ACK for an index (key) is recieved, remove that from the dict.
 
     private Queue<(EndPoint, Message?)> Message_Q = new Queue<(EndPoint, Message?)> ();
 
-    private int timeout_time = 5000;
+    private int timeout_time = 1000;
+    private TimeSpan long_timeout = TimeSpan.FromSeconds(5);
     HashSet<int> acknowledgements = new HashSet<int>(); //HashSet for performance friendly reasons.
 
     public void start()
     {
         running = true;
         
+        DateTime lastActivity = DateTime.Now;
+        DateTime lastAckActivity = DateTime.Now;
+
         Console.Write("Attempting to start server...");
         CreateSocket();
         
@@ -60,23 +66,52 @@ class ServerUDP
         {
             try
             {
-                EndPoint clientendpoint;
-                try{
-                    clientendpoint = new IPEndPoint(IPAddress.IPv6Any, 0);
-                }
-                catch (Exception ex)
+                if (socket.Poll(timeout_time, SelectMode.SelectRead))
                 {
-                    Console.WriteLine("Client does not use IP6", ex);
-                    clientendpoint = new IPEndPoint(IPAddress.Any, 0);
+                    EndPoint clientendpoint;
+                    try{
+                        clientendpoint = new IPEndPoint(IPAddress.IPv6Any, 0);
+                    }
+                    catch (Exception ex)
+                    {
+                        Console.WriteLine("Client does not use IP6", ex);
+                        clientendpoint = new IPEndPoint(IPAddress.Any, 0);
+                    }
+                    int bytes = socket.ReceiveFrom(buffer, ref clientendpoint);
+
+                    string data = Encoding.ASCII.GetString(buffer, 0, bytes);
+                    Message? message = JsontoMessage(data);
+                    Message_Q.Enqueue((clientendpoint, message));
+                        lastActivity = DateTime.Now;
+
+                    (EndPoint, Message?) next = Message_Q.Dequeue();
+                    if (message?.Type == MessageType.Ack && allDataSent == true)
+                    {
+                        lastAckActivity = DateTime.Now;
+                    }
+
+                    HandleData(next.Item2, next.Item1);
                 }
-                int bytes = socket.ReceiveFrom(buffer, ref clientendpoint);
 
-                string data = Encoding.ASCII.GetString(buffer, 0, bytes);
-                Message? message = JsontoMessage(data);
-                Message_Q.Enqueue((clientendpoint, message));
+                TimeSpan elapsedTime = DateTime.Now - lastActivity;
+                TimeSpan elapsedAckTime = DateTime.Now - lastAckActivity;
 
-                (EndPoint, Message?) next = Message_Q.Dequeue();
-                HandleData(next.Item2, next.Item1);
+                if (allDataSent == true && elapsedAckTime >= TimeSpan.FromSeconds(1) && connectedClient != null)
+                {
+                    HandleTimer(connectedClient);
+                    lastAckActivity = DateTime.Now;
+                }
+
+                if (elapsedTime >= long_timeout && connectedClient != null)
+                {
+                    Console.WriteLine($"There has been no activity from client {connectedClient} for a while");
+                    SendError(connectedClient,"Activity Timeout");
+                }
+            }
+            catch (SocketException ex)
+            {
+                Console.WriteLine($"!!Client has disconnected unexpectedly!! ", ex);
+                EndConnection(connectedClient);
             }
             catch (Exception ex)
             {
@@ -115,7 +150,7 @@ class ServerUDP
                     HandleAck(message, clientendpoint);
                     break;
                 default:
-                    Console.WriteLine("Invalid message type => Client -> Server");
+                    Console.WriteLine($"Invalid message type => Client {message.Type} -> Server");
                     SendError(clientendpoint, $"Invalid message type => Client -> Server");
                     break;
             }
@@ -326,11 +361,8 @@ class ServerUDP
 
                             byte[] sendData = Encoding.UTF8.GetBytes(ObjectToJson(mesg));
                             socket?.SendTo(sendData, clientendpoint); 
+                            allDataSent = true;
                             Console.WriteLine("Final message of type End has been sent");
-                            System.Timers.Timer timer = new System.Timers.Timer(timeout_time);
-                            timer.Elapsed += (sender, e) => HandleTimer(clientendpoint);
-                            timer.AutoReset = false;
-                            timer.Start();
                         }
                     }
                     catch
@@ -366,17 +398,17 @@ class ServerUDP
 
     public void HandleAck(Message message, EndPoint clientendpoint)
     {
-        if (message.Type == MessageType.Ack && message.Content != null)
+        if (message.Type == MessageType.Ack && message.Content != null && connectedClient != null)
         {
             int acksegment;
             if (int.TryParse(message.Content, out acksegment))
             {
                 acknowledgements.Add(acksegment);
-                if (sentmessages[acksegment.ToString("D4")] != null)
+                string tocheck = acksegment.ToString("D4");
+                if (sentmessages.ContainsKey(tocheck))
                 {
-                    sentmessages.Remove(acksegment.ToString("D4"));
+                    sentmessages.Remove(tocheck);
                 }
-                //Console.WriteLine($"ACK of index: 0{acksegment} has been recieved");
             }
             else
             {
@@ -409,6 +441,11 @@ class ServerUDP
                 ResendData(contentToSend, index, clientendpoint);
             }
         }
+        else
+        {
+            Console.WriteLine("All ACK's have been recieved, terminating connection");
+            EndConnection(clientendpoint);
+        }
     }
     
     public void ResendData(string content, int segmentindex, EndPoint clientendpoint)
@@ -434,15 +471,31 @@ class ServerUDP
 
 
     #region endconnection
-    public void EndConnection(EndPoint clientendpoint)
+    public void EndConnection(EndPoint? clientendpoint)
     {
         if (connectedClient == clientendpoint)
         {
             connectedClient = null;
             clientConnected = false;
+            allDataSent = false;
         }
         HelloRecieved = false;
         sentmessages.Clear();
+
+        if (socket != null)
+        {
+            try
+            {
+                socket.Shutdown(SocketShutdown.Both);
+                socket.Close();
+                socket = null;
+            }
+            catch
+            {
+                Console.WriteLine("Something went wrong cleaning up the socket..");
+            }
+        }
+
         Console.WriteLine("Connection with client has ended, awaiting new client...");
     }
     #endregion
@@ -465,8 +518,11 @@ class ServerUDP
         };
 
         byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(msg));
-        socket?.SendTo(send_data, ClientEndPoint);
-
+        try
+        {
+            socket?.SendTo(send_data, ClientEndPoint);
+        }
+        catch (SocketException ex) {Console.WriteLine("Could not send error message to client: ", ex);}
         if (clientConnected == true && connectedClient == ClientEndPoint)
         {
             EndConnection(ClientEndPoint);

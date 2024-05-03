@@ -27,17 +27,17 @@ class Program
 
 class ClientUDP
 {
-    Socket sock { get; set; }
+    Socket? sock { get; set; }
     bool running = false;
 
-    int Index = 0;
+
 
     //TODO: implement all necessary logic to create sockets and handle incoming messages
     // Do not put all the logic into one method. Create multiple methods to handle different tasks.
     public void start()
     {
         running = true;
-        sock = createSocket();
+        createSocket();
         Console.WriteLine("Client is starting...Attempting to send Hello");
         
         if (sock != null)
@@ -46,36 +46,43 @@ class ClientUDP
             }
 
         byte[] buffer = new byte[1000];
-        while (running)
+        while (running && sock != null)
         {
             EndPoint serverendpoint;
                 try{
                     serverendpoint = new IPEndPoint(IPAddress.IPv6Any, 0);
                 }
-                catch (Exception ex)
+                catch
                 {
                     serverendpoint = new IPEndPoint(IPAddress.Any, 0);
                 }
                 int bytes = sock.ReceiveFrom(buffer, ref serverendpoint);
 
                 string data = Encoding.ASCII.GetString(buffer, 0, bytes);
-                Message message = JsontoMessage(data);
+                Message? message = JsontoMessage(data);
                 HandleData(message, serverendpoint);
         }
     }
     //TODO: create all needed objects for your sockets 
 
-    public void HandleData(Message message, EndPoint serverendpoint) // clientendpoint in server endpoint veranderd
+    public void HandleData(Message? message, EndPoint serverendpoint) // clientendpoint in server endpoint veranderd
     {
+        if (message == null) {return;}
         switch(message.Type)
         {
             case MessageType.Welcome:
                 ReceiveWelcome(message, serverendpoint);
                 break;
             case MessageType.Data:
-                SendAck(serverendpoint, message.Content);
+                SendAck(serverendpoint, message.Content); //Moet een file aanmaken met dezelfde naam als in de data request, en de data erin stoppen
                 break;
             case MessageType.End:
+                //Terminate();
+                //Wanneer de server een End message verstuurd betekend dit dat alle data verstuurd is, hierna gaat de client kijken naar welke index's nog niet zijn binnen gekomen
+                //Pas wanneer alles binnen is, terminate de client
+                break;
+            case MessageType.Error:
+                Console.WriteLine($"Error from server: {message.Content}");
                 Terminate();
                 break;
             default:
@@ -92,14 +99,11 @@ class ClientUDP
         
     }
 
-    public Socket? createSocket()
+    public void createSocket()
     {
-        Socket sock;
         try {
             IPAddress ip = getIP();
             sock = new Socket(ip.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
-            
-            return sock;
         }
         catch
         {
@@ -163,7 +167,6 @@ class ClientUDP
                 };
                 
                 byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
-                Index = 0;
                 sock?.SendTo(send_data, serverEndpoint);
                 Console.WriteLine("The Requested data message has been sent to the Server.");
                 
@@ -175,8 +178,9 @@ class ClientUDP
         }
     }
 
-    public void SendAck(EndPoint serverEndpoint, string index)
+    public void SendAck(EndPoint serverEndpoint, string? index)
     {
+        if (index == null) {return;}
         try
         {
             Message message = new Message
@@ -184,10 +188,8 @@ class ClientUDP
                 Type = MessageType.Ack,
                 Content = index.Substring(0,4)
             };
-            Index ++;
-            Console.WriteLine($"Sending ACK: {message.Content}");
             byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
-            sock.SendTo(send_data, serverEndpoint);
+            sock?.SendTo(send_data, serverEndpoint);
         }
         catch (Exception ex)
         {
@@ -200,8 +202,8 @@ class ClientUDP
     {
         try
         {
-        Console.WriteLine("The activity will be terminated");
-        sock.Close();
+            Console.WriteLine("The activity will be terminated");
+            running = false;
         }
         catch (Exception ex)
         {

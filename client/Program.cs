@@ -166,7 +166,7 @@ class ClientUDP
                     Content = "hamlet.txt"
                 };
                 
-                byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
+                byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
                 sock?.SendTo(send_data, serverEndpoint);
                 Console.WriteLine("The Requested data message has been sent to the Server.");
                 
@@ -188,7 +188,7 @@ class ClientUDP
                 Type = MessageType.Ack,
                 Content = index.Substring(0,4)
             };
-            byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
+            byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
             sock?.SendTo(send_data, serverEndpoint);
         }
         catch (Exception ex)

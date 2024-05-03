@@ -39,6 +39,9 @@ class ServerUDP
     bool clientConnected { get; set; }
     int clientThreshold = 0;
     bool HelloRecieved = false;
+    public EndPoint? connectedClient {get; private set;}
+
+    Dictionary<string, string> sentmessages = new Dictionary<string, string>(); //Stores sent messages, when an ACK for an index (key) is recieved, remove that from the dict.
 
     public void start()
     {
@@ -97,6 +100,7 @@ class ServerUDP
                     break;
                 default:
                     Console.WriteLine("Invalid message type => Client -> Server");
+                    SendError(clientendpoint, $"Invalid message type => Client -> Server");
                     break;
             }
         }
@@ -189,6 +193,7 @@ class ServerUDP
                 if (message.Content == null)
                 {
                     Console.WriteLine("Invalid threshold format in Hello!, terminating connection attempt..");
+                    SendError(clientendpoint, $"Invalid threshold format in Hello!, terminating connection attempt..");
                     return;
                 }
                 clientThreshold = int.Parse(message.Content);
@@ -197,7 +202,8 @@ class ServerUDP
             }
             catch (Exception ex)
             {
-                Console.WriteLine("Invalid message thershold recieved, are you certain the content is a number?", ex);
+                Console.WriteLine("Invalid message treshold recieved, are you certain the content is a number?", ex);
+                SendError(clientendpoint, $"Invalid message treshold recieved, are you certain the content is a number?");
             }
         }
         else if (HelloRecieved == true)
@@ -210,9 +216,11 @@ class ServerUDP
     public void SendWelcome(EndPoint clientendpoint)
     {
         try{
-            Message message = new();
-            message.Type = MessageType.Welcome;
-            message.Content = "";
+            Message message = new()
+            {
+                Type = MessageType.Welcome,
+                Content = ""
+            };
             byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
             socket?.SendTo(send_data, clientendpoint);
             Console.WriteLine("Welcome message has been sent to client, awaiting data request before connecting.");
@@ -220,40 +228,98 @@ class ServerUDP
         catch(Exception ex)
         {
             Console.WriteLine($"There has been an error sending the welcome message!: {ex.Message}");
+            SendError(clientendpoint, $"There has been an error sending the welcome message!");
         }
     }
 
     public void ReceiveRequestData(EndPoint clientendpoint, Message message)
     {
-        if(clientConnected == true || HelloRecieved == true)
+        if(clientConnected == true && HelloRecieved == true)
         {
             if (message.Content != null)
             {
+                if (clientendpoint != connectedClient) { Console.WriteLine($"Request data recieved from non-connected client: {clientendpoint} - {connectedClient}"); return;}
                 string requestedfile = message.Content;
+
+                const int segmentsize = 500; //500 bytes per message, saving some for the message class and ID
+                int congestionwindow = 1;
                 try
                 {
                     var path = Path.Combine(Directory.GetCurrentDirectory(), requestedfile);
                     try
                     {
-                        StreamReader sr = new StreamReader(path);
+                        FileStream sr = new FileStream(path, FileMode.Open, FileAccess.Read);
                         using (sr)
                         {
-                            while(sr.Peek() >= 0)
+                            int segmentindex = 1;
+                            byte[] buffer = new byte[segmentsize];
+
+                            int bytestoread;
+                            while((bytestoread = sr.Read(buffer, 0, segmentsize)) > 0)
                             {
-                                Console.Write((char)sr.Read());
+                                for (int i = 0; i < congestionwindow; i++)
+                                {
+                                    if (bytestoread > 0)
+                                    {
+                                        string segment = Encoding.ASCII.GetString(buffer, 0, bytestoread);
+                                        string formatted = segmentindex.ToString("D4");
+                                        string content = "${formatted}{segment}";
+
+                                        Message msg = new();
+                                        msg.Type = MessageType.Data;
+                                        msg.Content = content;
+
+                                        segmentindex++;
+                                        byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(msg));
+                                        socket?.SendTo(send_data, clientendpoint);
+
+                                        bytestoread = sr.Read(buffer, 0, segmentsize);
+                                        Console.WriteLine(congestionwindow);
+                                    }
+                                    else
+                                    {
+                                        Message msg = new()
+                                        {
+                                            Type = MessageType.End
+                                        };
+
+                                        byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(msg));
+                                        socket?.SendTo(send_data, clientendpoint); 
+                                        Console.WriteLine("Final message of type End has been sent");
+                                        break;
+                                    }
+                                }
+                                if (congestionwindow >= clientThreshold)
+                                {
+                                    congestionwindow = clientThreshold;
+                                }
+                                else
+                                {
+                                    congestionwindow *= 2;
+                                }
                             }
                         }
                     }
                     catch
                     {
                         Console.WriteLine("There has been a problem reading the requested file");
+                        SendError(clientendpoint, $"There has been a problem reading the requested file");
                     }
                 }
                 catch (Exception ex)
                 {
-                    Console.WriteLine($"File {message.Content} could not be found! ", ex);
+                    Console.WriteLine($"File {message.Content} could not be found!", ex);
+                    SendError(clientendpoint, $"File {message.Content} could not be found!");
                 }
             }
+            else {Console.WriteLine("Client has request an invalid file: NULL"); SendError(clientendpoint, "File of type NULL sent");}
+        }
+        else if (clientConnected == false || HelloRecieved == true)
+        {
+            Console.WriteLine("Server has recieved data request, in order. Connection to this client finalizing..");
+            clientConnected = true;
+            connectedClient = clientendpoint;
+            ReceiveRequestData(clientendpoint, message);
         }
         else if (HelloRecieved == false)
         {
@@ -269,6 +335,30 @@ class ServerUDP
     //TODO: [End sending data to client]
 
     //TODO: [Handle Errors]
+
+    public void SendError(EndPoint ClientEndPoint, string error)
+    {
+        Message msg = new()
+        {
+            Type = MessageType.Error,
+            Content = error
+        };
+
+        byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(msg));
+        socket?.SendTo(send_data, ClientEndPoint);
+
+        if (clientConnected == true && connectedClient == ClientEndPoint)
+        {
+            clientConnected = false;
+            connectedClient = null;
+            HelloRecieved = false;
+            sentmessages.Clear();
+        }
+        else if (HelloRecieved == true)
+        {
+            HelloRecieved = false;
+        }
+    }
 
     //TODO: create all needed methods to handle incoming messages
 

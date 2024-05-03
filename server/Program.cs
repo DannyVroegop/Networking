@@ -43,6 +43,12 @@ class ServerUDP
 
     Dictionary<string, string> sentmessages = new Dictionary<string, string>(); //Stores sent messages, when an ACK for an index (key) is recieved, remove that from the dict.
 
+    private Queue<(EndPoint, Message?)> Message_Q = new Queue<(EndPoint, Message?)> ();
+
+    private int lastSegmentIndexSent = 0;
+    private int timeout_time = 5000;
+    HashSet<int> acknowledgements = new HashSet<int>(); //HashSet for performance friendly reasons.
+
     public void start()
     {
         running = true;
@@ -68,7 +74,10 @@ class ServerUDP
 
                 string data = Encoding.ASCII.GetString(buffer, 0, bytes);
                 Message? message = JsontoMessage(data);
-                HandleData(message, clientendpoint);
+                Message_Q.Enqueue((clientendpoint, message));
+
+                (EndPoint, Message?) next = Message_Q.Dequeue();
+                HandleData(next.Item2, next.Item1);
             }
             catch (Exception ex)
             {
@@ -269,25 +278,14 @@ class ServerUDP
                                         msg.Type = MessageType.Data;
                                         msg.Content = content;
 
-                                        segmentindex++;
+                                        
                                         byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(msg));
                                         socket?.SendTo(send_data, clientendpoint);
 
+                                        segmentindex++;
                                         bytestoread = sr.Read(buffer, 0, segmentsize);
-                                        Console.WriteLine(congestionwindow);
                                     }
-                                    else
-                                    {
-                                        Message msg = new()
-                                        {
-                                            Type = MessageType.End
-                                        };
-
-                                        byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(msg));
-                                        socket?.SendTo(send_data, clientendpoint); 
-                                        Console.WriteLine("Final message of type End has been sent");
-                                        break;
-                                    }
+                                    
                                 }
                                 if (congestionwindow >= clientThreshold)
                                 {
@@ -296,8 +294,19 @@ class ServerUDP
                                 else
                                 {
                                     congestionwindow *= 2;
+                                    if (congestionwindow >= clientThreshold) {congestionwindow = clientThreshold;}
                                 }
                             }
+                            Console.WriteLine("Preparing to send End message...");
+                            Message mesg = new()
+                            {
+                                Type = MessageType.End
+                            };
+
+                            byte[] sendData = Encoding.UTF8.GetBytes(ObjectToJson(mesg));
+                            socket?.SendTo(sendData, clientendpoint); 
+                            Console.WriteLine("Final message of type End has been sent");
+                            EndConnection();      
                         }
                     }
                     catch
@@ -316,7 +325,7 @@ class ServerUDP
         }
         else if (clientConnected == false || HelloRecieved == true)
         {
-            Console.WriteLine("Server has recieved data request, in order. Connection to this client finalizing..");
+            Console.WriteLine("Server has recieved data request, in order. Connection to this client has been made: " + clientendpoint);
             clientConnected = true;
             connectedClient = clientendpoint;
             ReceiveRequestData(clientendpoint, message);
@@ -325,6 +334,15 @@ class ServerUDP
         {
             Console.WriteLine("Server recieved RequestData before Hello, Invalid order");
         }
+    }
+
+    public void EndConnection()
+    {
+        clientConnected = false;
+        connectedClient = null;
+        HelloRecieved = false;
+        sentmessages.Clear();
+        Console.WriteLine("Connection with client has ended, awaiting new client...");
     }
     //TODO: [Receive RequestData]
 
@@ -349,10 +367,7 @@ class ServerUDP
 
         if (clientConnected == true && connectedClient == ClientEndPoint)
         {
-            clientConnected = false;
-            connectedClient = null;
-            HelloRecieved = false;
-            sentmessages.Clear();
+            EndConnection();
         }
         else if (HelloRecieved == true)
         {

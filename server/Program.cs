@@ -45,7 +45,6 @@ class ServerUDP
 
     private Queue<(EndPoint, Message?)> Message_Q = new Queue<(EndPoint, Message?)> ();
 
-    private int lastSegmentIndexSent = 0;
     private int timeout_time = 5000;
     HashSet<int> acknowledgements = new HashSet<int>(); //HashSet for performance friendly reasons.
 
@@ -91,7 +90,8 @@ class ServerUDP
             
         }
     }
-
+    
+    #region handledata
     public void HandleData(Message? message, EndPoint clientendpoint)
     {
         if (message == null)
@@ -107,6 +107,13 @@ class ServerUDP
                 case MessageType.RequestData:
                     ReceiveRequestData(clientendpoint, message);
                     break;
+                case MessageType.Error:
+                    Console.WriteLine("Error recieved from client, terminating connection if one is present.");
+                    EndConnection(clientendpoint);
+                    break;
+                case MessageType.Ack:
+                    HandleAck(message, clientendpoint);
+                    break;
                 default:
                     Console.WriteLine("Invalid message type => Client -> Server");
                     SendError(clientendpoint, $"Invalid message type => Client -> Server");
@@ -115,7 +122,9 @@ class ServerUDP
         }
         
     }
+    #endregion
 
+    #region utility
     public IPAddress getIP()
     {
         string hostName = Dns.GetHostName();
@@ -141,7 +150,9 @@ class ServerUDP
         }
         catch (Exception ex) { Console.WriteLine($"Message: {json} cannot be converted to a Message! [SERVER]", ex); return default;}
     }
+    #endregion
 
+    #region Socket creation
     public void CreateSocket()
     {
         Socket sock;
@@ -164,6 +175,7 @@ class ServerUDP
         }
         
     }
+    #endregion
         /* ASSIGNMENT TO DO
            The client sends a hello message, the content is a number (default value 20) that represents the threshold. AKA how many message per x it can handle
            the server sends back an welcome message, this has no content (check validation?)
@@ -193,6 +205,7 @@ class ServerUDP
     // you can call a dedicated method to handle each received type of messages
 
     //TODO: [Receive Hello]
+    #region handle Hello
     public void ReceiveHello(Message message, EndPoint clientendpoint)
     {
         if (clientConnected == false || HelloRecieved == false)
@@ -220,7 +233,9 @@ class ServerUDP
             Console.WriteLine("Server has already recieved an hello!");
         }
     }
+    #endregion
 
+    #region welcome
     //TODO: [Send Welcome]
     public void SendWelcome(EndPoint clientendpoint)
     {
@@ -240,7 +255,9 @@ class ServerUDP
             SendError(clientendpoint, $"There has been an error sending the welcome message!");
         }
     }
+    #endregion
 
+    #region  sending data
     public void ReceiveRequestData(EndPoint clientendpoint, Message message)
     {
         if(clientConnected == true && HelloRecieved == true)
@@ -272,15 +289,19 @@ class ServerUDP
                                     {
                                         string segment = Encoding.ASCII.GetString(buffer, 0, bytestoread);
                                         string formatted = segmentindex.ToString("D4");
-                                        string content = "${formatted}{segment}";
+                                        string content = $"{formatted}{segment}";
 
-                                        Message msg = new();
-                                        msg.Type = MessageType.Data;
-                                        msg.Content = content;
+                                        Message msg = new()
+                                        {
+                                            Type = MessageType.Data,
+                                            Content = content
+                                        };
 
-                                        
+
                                         byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(msg));
                                         socket?.SendTo(send_data, clientendpoint);
+
+                                        sentmessages.Add($"{formatted}",$"{segment}");
 
                                         segmentindex++;
                                         bytestoread = sr.Read(buffer, 0, segmentsize);
@@ -306,7 +327,10 @@ class ServerUDP
                             byte[] sendData = Encoding.UTF8.GetBytes(ObjectToJson(mesg));
                             socket?.SendTo(sendData, clientendpoint); 
                             Console.WriteLine("Final message of type End has been sent");
-                            EndConnection();      
+                            System.Timers.Timer timer = new System.Timers.Timer(timeout_time);
+                            timer.Elapsed += (sender, e) => HandleTimer(clientendpoint);
+                            timer.AutoReset = false;
+                            timer.Start();
                         }
                     }
                     catch
@@ -335,15 +359,93 @@ class ServerUDP
             Console.WriteLine("Server recieved RequestData before Hello, Invalid order");
         }
     }
+    #endregion
 
-    public void EndConnection()
+
+    #region Acknowledgement
+
+    public void HandleAck(Message message, EndPoint clientendpoint)
     {
-        clientConnected = false;
-        connectedClient = null;
+        if (message.Type == MessageType.Ack && message.Content != null)
+        {
+            int acksegment;
+            if (int.TryParse(message.Content, out acksegment))
+            {
+                acknowledgements.Add(acksegment);
+                if (sentmessages[acksegment.ToString("D4")] != null)
+                {
+                    sentmessages.Remove(acksegment.ToString("D4"));
+                }
+                //Console.WriteLine($"ACK of index: 0{acksegment} has been recieved");
+            }
+            else
+            {
+                Console.WriteLine("Invalid format for ACK recieved!");
+                SendError(clientendpoint, "Invalid ACK format");
+            }
+        }
+    }
+
+
+    #endregion
+
+    #region Timeout Handling
+    
+    
+    
+    public void HandleTimer(EndPoint clientendpoint)
+    {
+        List<int> missingACK = sentmessages.Keys
+            .Select(key => int.Parse(key))
+            .Where(key => !acknowledgements.Contains(key))
+            .ToList();
+
+        if (missingACK.Any())
+        {
+
+            foreach(var index in missingACK)
+            {
+                string contentToSend = sentmessages[index.ToString("D4")];
+                ResendData(contentToSend, index, clientendpoint);
+            }
+        }
+    }
+    
+    public void ResendData(string content, int segmentindex, EndPoint clientendpoint)
+    {
+        string formatted = segmentindex.ToString("D4");
+
+        string sentcontent = $"{formatted}{content}";
+
+        Message msg = new Message()
+        {
+            Type = MessageType.Data,
+            Content = sentcontent
+        };
+
+        byte[] sendData = Encoding.ASCII.GetBytes(ObjectToJson(msg));
+
+        socket?.SendTo(sendData, clientendpoint);
+
+        sentmessages[formatted] = content;
+    }
+    
+    #endregion
+
+
+    #region endconnection
+    public void EndConnection(EndPoint clientendpoint)
+    {
+        if (connectedClient == clientendpoint)
+        {
+            connectedClient = null;
+            clientConnected = false;
+        }
         HelloRecieved = false;
         sentmessages.Clear();
         Console.WriteLine("Connection with client has ended, awaiting new client...");
     }
+    #endregion
     //TODO: [Receive RequestData]
 
     //TODO: [Send Data]
@@ -353,7 +455,7 @@ class ServerUDP
     //TODO: [End sending data to client]
 
     //TODO: [Handle Errors]
-
+    #region ErrorHandling
     public void SendError(EndPoint ClientEndPoint, string error)
     {
         Message msg = new()
@@ -367,14 +469,14 @@ class ServerUDP
 
         if (clientConnected == true && connectedClient == ClientEndPoint)
         {
-            EndConnection();
+            EndConnection(ClientEndPoint);
         }
         else if (HelloRecieved == true)
         {
             HelloRecieved = false;
         }
     }
-
+    #endregion
     //TODO: create all needed methods to handle incoming messages
 
 

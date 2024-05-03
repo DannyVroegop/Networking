@@ -73,7 +73,7 @@ class ClientUDP
                 ReceiveWelcome(message, serverendpoint);
                 break;
             case MessageType.Data:
-                SendAck(serverendpoint);
+                SendAck(serverendpoint, message.Content);
                 break;
             case MessageType.End:
                 Terminate();
@@ -143,7 +143,7 @@ class ClientUDP
         sock.SendTo(send_data, ServerEndpoint);
     }
 
-    public void ReceiveWelcome(Message? messgae, EndPoint serverEndpoint)
+    public void ReceiveWelcome(Message? message, EndPoint serverEndpoint)
     {
         Console.WriteLine("Welcome message has been received"); 
         SendRequestData(serverEndpoint); 
@@ -165,7 +165,7 @@ class ClientUDP
                 byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
                 Index = 0;
                 sock?.SendTo(send_data, serverEndpoint);
-                Console.WriteLine("The Requested data message has been sent to the client, awaiting data request before connecting.");
+                Console.WriteLine("The Requested data message has been sent to the Server.");
                 
             }
             catch (Exception ex)
@@ -175,19 +175,19 @@ class ClientUDP
         }
     }
 
-    public void SendAck(EndPoint serverEndpoint)
+    public void SendAck(EndPoint serverEndpoint, string index)
     {
         try
         {
             Message message = new Message
             {
                 Type = MessageType.Ack,
-                Content = Index.ToString("0000")
+                Content = index.Substring(0,4)
             };
             Index ++;
-
+            Console.WriteLine($"Sending ACK: {message.Content}");
             byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
-            sock.Send(send_data);
+            sock.SendTo(send_data, serverEndpoint);
         }
         catch (Exception ex)
         {

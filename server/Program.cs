@@ -40,8 +40,10 @@ class ServerUDP
     bool clientConnected { get; set; }
     int clientThreshold = 0;
     bool HelloRecieved = false;
+    bool endofFile = false;
     public EndPoint? connectedClient {get; private set;}
-    bool allDataSent = false;
+    int lastRecievedAck = 0;
+    DateTime lastRecievedAckTime = DateTime.Now;
 
     Dictionary<string, string> sentmessages = new Dictionary<string, string>(); //Stores sent messages, when an ACK for an index (key) is recieved, remove that from the dict.
 
@@ -51,12 +53,14 @@ class ServerUDP
     private TimeSpan long_timeout = TimeSpan.FromSeconds(5);
     HashSet<int> acknowledgements = new HashSet<int>(); //HashSet for performance friendly reasons.
 
+    int congestionwindow = 1;
+    bool waitData = false;
+    DateTime lastActivity = DateTime.Now;
     public void start()
     {
         running = true;
         
-        DateTime lastActivity = DateTime.Now;
-        DateTime lastAckActivity = DateTime.Now;
+        
 
         Console.Write("Attempting to start server...");
         CreateSocket();
@@ -68,7 +72,7 @@ class ServerUDP
             {
                 if (socket.Poll(timeout_time, SelectMode.SelectRead)) //Checks if anything is available on the socket (data etc.) or if anything has been closed/terminated.
                 {
-                    EndPoint clientendpoint; //program would error without this
+                    EndPoint clientendpoint;
                     try{
                         clientendpoint = new IPEndPoint(IPAddress.IPv6Any, 0);
                     }
@@ -84,26 +88,15 @@ class ServerUDP
                     //Reset activity timer
                     lastActivity = DateTime.Now;
 
-                    //Dequeue next message, then reset acknowledgment timer if the message is one, finally handles the data
+                    //Dequeue next message, handle the data
                     (EndPoint, Message?) next = Message_Q.Dequeue();
-                    if (message?.Type == MessageType.Ack && allDataSent == true)
-                    {
-                        lastAckActivity = DateTime.Now;
-                    }
 
                     HandleData(next.Item2, next.Item1);
                 }
 
                 //Elapsed time check for timeout
                 TimeSpan elapsedTime = DateTime.Now - lastActivity;
-                TimeSpan elapsedAckTime = DateTime.Now - lastAckActivity;
 
-                //Checks if all data has been sent initially, and if the timeout tiemspan has passed.
-                if (allDataSent == true && elapsedAckTime >= TimeSpan.FromSeconds(1) && connectedClient != null)
-                {
-                    HandleTimer(connectedClient);
-                    lastAckActivity = DateTime.Now;
-                }
 
                 //checks for activity timeout (5s)
                 if (elapsedTime >= long_timeout && connectedClient != null)
@@ -151,7 +144,7 @@ class ServerUDP
                     ReceiveRequestData(clientendpoint, message);
                     break;
                 case MessageType.Error:
-                    Console.WriteLine("Error recieved from client, terminating connection if one is present.");
+                    Console.WriteLine($"Error recieved from client {message.Content}, terminating connection if one is present.");
                     EndConnection(clientendpoint);
                     break;
                 case MessageType.Ack:
@@ -291,8 +284,8 @@ class ServerUDP
                 string requestedfile = message.Content;
 
                 const int segmentsize = 500; //500 bytes per message, saving some for the message class and ID
-                //congestion window for slowstart
-                int congestionwindow = 1;
+                int totalsegment = 0;
+
                 try
                 {
                     var path = Path.Combine(Directory.GetCurrentDirectory(), requestedfile);
@@ -301,47 +294,104 @@ class ServerUDP
                         FileStream sr = new FileStream(path, FileMode.Open, FileAccess.Read);
                         using (sr)
                         {
-                            int segmentindex = 1;
                             byte[] buffer = new byte[segmentsize];
-
-                            int bytestoread;
-                            while((bytestoread = sr.Read(buffer, 0, segmentsize)) > 0)
+                            endofFile = false;
+                            while(!endofFile)
                             {
-                                for (int i = 0; i < congestionwindow; i++)
+                                if(!waitData)
                                 {
-                                    if (bytestoread > 0)
+                                    int segmentindex = lastRecievedAck > 0 ? lastRecievedAck : 1;
+                                    for (int i = 0; i < congestionwindow; i++)
                                     {
-                                        //if there are bytes left to read, get 500 bytes worth of data, add an index id for ACKs and then read the next lines.
-                                        string segment = Encoding.ASCII.GetString(buffer, 0, bytestoread);
-                                        string formatted = segmentindex.ToString("D4");
-                                        string content = $"{formatted}{segment}";
-
-                                        Message msg = new()
+                                        if (!clientConnected || connectedClient == null)
                                         {
-                                            Type = MessageType.Data,
-                                            Content = content
-                                        };
+                                            return;
+                                            //check if the client is still connected.
+                                        }
+                                        int bytestoread = sr.Read(buffer, 0, segmentsize);
+                                        if (bytestoread > 0)
+                                        {
+                                            //if there are bytes left to read, get 500 bytes worth of data, add an index id for ACKs and then read the next lines.
+                                            string segment = Encoding.ASCII.GetString(buffer, 0, bytestoread);
+                                            string formatted = segmentindex.ToString("D4");
+                                            string content = $"{formatted}{segment}";
+
+                                            Message msg = new()
+                                            {
+                                                Type = MessageType.Data,
+                                                Content = content
+                                            };
 
 
-                                        byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(msg));
-                                        socket?.SendTo(send_data, clientendpoint);
+                                            byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(msg));
+                                            socket?.SendTo(send_data, clientendpoint);
 
-                                        sentmessages.Add($"{formatted}",$"{segment}");
+                                            if(!sentmessages.ContainsKey(formatted))
+                                            {
+                                                sentmessages.Add($"{formatted}",$"{segment}");
+                                            }
 
-                                        segmentindex++;
-                                        bytestoread = sr.Read(buffer, 0, segmentsize);
+                                            segmentindex++;
+                                            totalsegment++;
+                                            Thread.Sleep(7000);
+                                            //bytestoread = sr.Read(buffer, 0, segmentsize);
+                                        }
+                                        else
+                                        {
+                                            endofFile = true;
+                                            break;
+                                        }
+                                        try
+                                        {
+                                            if (socket != null && socket.Poll(0, SelectMode.SelectRead))
+                                            {
+                                                byte[] recvBuffer = new byte[1000];
+                                                int bytesReceived = socket.ReceiveFrom(recvBuffer, ref clientendpoint);
+
+                                                string data = Encoding.ASCII.GetString(recvBuffer, 0, bytesReceived);
+                                                Message? receivedMessage = JsontoMessage(data);
+                                                lastActivity = DateTime.Now;
+
+                                                HandleData(receivedMessage, clientendpoint);
+                                            }
+                                        }
+                                        catch (SocketException ex)
+                                        {
+                                            //incase client crashes
+                                            Console.WriteLine($"!!Client has disconnected unexpectedly!! ", ex);
+                                            EndConnection(connectedClient);
+                                            waitData = false;
+                                            endofFile = true;
+                                            return;
+                                        }
                                     }
-                                    
                                 }
-                                if (congestionwindow >= clientThreshold) //if threshold has been reached, make the window the client threshold
+                                waitData = true;
+                                try
                                 {
-                                    congestionwindow = clientThreshold;
+                                    if (socket != null && socket.Poll(0, SelectMode.SelectRead))
+                                    {
+                                        byte[] recvBuffer = new byte[1000];
+                                        int bytesReceived = socket.ReceiveFrom(recvBuffer, ref clientendpoint);
+
+                                        string data = Encoding.ASCII.GetString(recvBuffer, 0, bytesReceived);
+                                        Message? receivedMessage = JsontoMessage(data);
+                                        lastActivity = DateTime.Now;
+
+                                        HandleData(receivedMessage, clientendpoint);
+                                    }
                                 }
-                                else
+                                catch (SocketException ex)
                                 {
-                                    congestionwindow *= 2; //double for slowstart, added extra check to ensure it doesnt go over the threshold
-                                    if (congestionwindow >= clientThreshold) {congestionwindow = clientThreshold;}
+                                    //incase client crashes
+                                    Console.WriteLine($"!!Client has disconnected unexpectedly!! ", ex);
+                                    EndConnection(connectedClient);
+                                    waitData = false;
+                                    endofFile = true;
+                                    return;
                                 }
+                                HandleTimer(clientendpoint);
+                                
                             }
                             //When all data has been read and sent, send the end message to client and set allDataSent to true for the ACK timer.
                             Console.WriteLine("Preparing to send End message...");
@@ -352,12 +402,12 @@ class ServerUDP
 
                             byte[] sendData = Encoding.ASCII.GetBytes(ObjectToJson(mesg));
                             socket?.SendTo(sendData, clientendpoint); 
-                            allDataSent = true;
                             Console.WriteLine("Final message of type End has been sent");
                         }
                     }
-                    catch
+                    catch (Exception ex)
                     {
+                        Console.WriteLine(ex);
                         Console.WriteLine("There has been a problem reading the requested file");
                         SendError(clientendpoint, $"There has been a problem reading the requested file");
                     }
@@ -398,11 +448,18 @@ class ServerUDP
             if (int.TryParse(message.Content, out acksegment))
             {
                 acknowledgements.Add(acksegment);
+                
+                if (acksegment > lastRecievedAck)
+                {
+                    lastRecievedAck = acksegment+1;
+                }
+
                 string tocheck = acksegment.ToString("D4");
                 if (sentmessages.ContainsKey(tocheck))
                 {
                     sentmessages.Remove(tocheck);
                 }
+                Console.WriteLine($"Recieved ACK: {tocheck}");
             }
             else
             {
@@ -416,28 +473,40 @@ class ServerUDP
     #endregion
 
     #region Timeout Handling
-    //Function called if the ACK timer is triggered, checks for any missing ACK's then resends those messages.
-    //I know the assignment said to sent all ACK's from the missing index to end, but it felt like a waste of resources to do this.
     public void HandleTimer(EndPoint clientendpoint)
     {
-        List<int> missingACK = sentmessages.Keys
-            .Select(key => int.Parse(key))
-            .Where(key => !acknowledgements.Contains(key))
-            .ToList();
-
-        if (missingACK.Any())
+        if (DateTime.Now - lastRecievedAckTime >= TimeSpan.FromSeconds(1))
         {
+            waitData = false;
+            lastRecievedAckTime = DateTime.Now;
+            List<int> missingACK = sentmessages.Keys
+                .Select(key => int.Parse(key))
+                .Where(key => !acknowledgements.Contains(key))
+                .ToList();
 
-            foreach(var index in missingACK)
+            if (missingACK.Any())
             {
-                string contentToSend = sentmessages[index.ToString("D4")];
-                ResendData(contentToSend, index, clientendpoint);
+                //Console.WriteLine("Acks missing, resetting slowstart");
+                congestionwindow = 1;
+                foreach(var index in missingACK)
+                {
+                    // string contentToSend = sentmessages[index.ToString("D4")];
+                    //ResendData(contentToSend, index, clientendpoint);
+                   lastRecievedAck = missingACK.First();
+                   Console.WriteLine($"ACK missing, resetting congestionwindow, lastack: {lastRecievedAck}");
+                }
+            }
+            else
+            {
+                string con = Math.Min(congestionwindow*2, clientThreshold) <= clientThreshold ? $", double window: OLD WINDOW {congestionwindow} - NEW {Math.Min(congestionwindow*2, clientThreshold)}" : $"WINDOW: {clientThreshold}.";
+                Console.WriteLine("All acks recieved" + con);
+                congestionwindow = Math.Min(congestionwindow*2, clientThreshold);
             }
         }
         else
         {
-            Console.WriteLine("All ACK's have been recieved, terminating connection");
-            EndConnection(clientendpoint);
+            //Console.WriteLine("Timeout has not yet ended");
+            return;
         }
     }
     
@@ -472,7 +541,13 @@ class ServerUDP
         {
             connectedClient = null;
             clientConnected = false;
-            allDataSent = false;
+            congestionwindow = 1;
+            clientThreshold = 0;
+            sentmessages.Clear();
+            acknowledgements.Clear();
+            waitData = false;
+            lastRecievedAck = 0;
+            endofFile = false;
         }
         HelloRecieved = false;
         sentmessages.Clear();

@@ -29,42 +29,89 @@ class ClientUDP
 {
     Socket? sock { get; set; }
     bool running = false;
+    string? FileName = "hamlet.txt";
+    List<string> data = new List<string>();
+    DateTime lastActivity = DateTime.Now;
+    private TimeSpan long_timeout = TimeSpan.FromSeconds(5);
 
+    private EndPoint? connectedServer;
+    bool helloSent = false;
 
 
     //TODO: implement all necessary logic to create sockets and handle incoming messages
     // Do not put all the logic into one method. Create multiple methods to handle different tasks.
+   
+
     public void start()
     {
+        ClearFiles(FileName="hamlet.txt");
         running = true;
         createSocket();
         Console.WriteLine("Client is starting...Attempting to send Hello");
         
         if (sock != null)
-            {
-                SendHello(sock, 20);
-            }
+        {
+            SendHello(sock, 20);
+        }
 
         byte[] buffer = new byte[1000];
         while (running && sock != null)
         {
-            EndPoint serverendpoint;
-                try{
-                    serverendpoint = new IPEndPoint(IPAddress.IPv6Any, 0);
-                }
-                catch
+            try
+            {
+                if(helloSent == true && sock.Poll(1000, SelectMode.SelectWrite)) 
                 {
-                    serverendpoint = new IPEndPoint(IPAddress.Any, 0);
-                }
-                int bytes = sock.ReceiveFrom(buffer, ref serverendpoint);
+                    EndPoint serverendpoint;
+                    try{
+                        serverendpoint = new IPEndPoint(IPAddress.IPv6Any, 0);
+                    }
+                    catch
+                    {
+                        serverendpoint = new IPEndPoint(IPAddress.Any, 0);
+                    }
+                    int bytes = sock.ReceiveFrom(buffer, ref serverendpoint);
 
-                string data = Encoding.ASCII.GetString(buffer, 0, bytes);
-                Message? message = JsontoMessage(data);
-                HandleData(message, serverendpoint);
+                    string data = Encoding.ASCII.GetString(buffer, 0, bytes);
+                    Message? message = JsontoMessage(data);
+                    HandleData(message, serverendpoint);
+                    TimeSpan elapsedTime = DateTime.Now - lastActivity;
+
+
+                    //checks for activity timeout (5s)
+                    if (elapsedTime >= long_timeout && connectedServer != null)
+                    {
+                        Console.WriteLine($"There has been no activity from Server for a while");
+                        SendError(serverendpoint,"Activity Timeout");
+                    }
+                }
+            }
+            catch (SocketException ex)
+            {
+                //incase client crashes
+                Console.WriteLine($"!!Server has disconnected unexpectedly or is not online!! ", ex.Message);
+                Terminate();
+            }
         }
     }
     //TODO: create all needed objects for your sockets 
 
+    public void ClearFiles(string filename)
+    {
+        
+        string filePath = Path.Combine(Directory.GetCurrentDirectory(), filename);
+        if (File.Exists(filePath))
+        {
+            try
+            {
+                File.Delete(filePath);
+            }
+            catch
+            {
+                Console.WriteLine($"There was an error deleting {filename}");
+            }
+        }
+
+    }
     public void HandleData(Message? message, EndPoint serverendpoint) // clientendpoint in server endpoint veranderd
     {
         if (message == null) {return;}
@@ -74,12 +121,11 @@ class ClientUDP
                 ReceiveWelcome(message, serverendpoint);
                 break;
             case MessageType.Data:
-                SendAck(serverendpoint, message.Content); //Moet een file aanmaken met dezelfde naam als in de data request, en de data erin stoppen
+                SendAck(serverendpoint, message.Content);
                 break;
             case MessageType.End:
-                //Terminate();
-                //Wanneer de server een End message verstuurd betekend dit dat alle data verstuurd is, hierna gaat de client kijken naar welke index's nog niet zijn binnen gekomen
-                //Pas wanneer alles binnen is, terminate de client
+                AddData();
+                Terminate();
                 break;
             case MessageType.Error:
                 Console.WriteLine($"Error from server: {message.Content}");
@@ -129,44 +175,60 @@ class ClientUDP
         catch (Exception ex) { Console.WriteLine($"Message: {json} cannot be converted to a Message! [SERVER]", ex); return default;}
     }
 
-    public void SendHello(Socket sock, int thershold = 20)
+    public void SendHello(Socket sock, int threshold = 20)
     {
-        IPAddress iPAddress = getIP();
+        try
+        {
+            IPAddress iPAddress = getIP();
 
-        IPEndPoint ServerEndpoint = new IPEndPoint(iPAddress, 32000);
-        IPEndPoint sender = new IPEndPoint(iPAddress, 0);
-        EndPoint remoteEP = (EndPoint) sender;
+            IPEndPoint ServerEndpoint = new IPEndPoint(iPAddress, 32000);
+            IPEndPoint sender = new IPEndPoint(iPAddress, 0);
+            EndPoint remoteEP = (EndPoint) sender;
 
-        Message message = new();
-        message.Type = MessageType.Hello;
-        message.Content = thershold.ToString();
-        byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
+            Message message = new()
+            {
+                Type = MessageType.Hello,
+                Content = threshold.ToString()
+            };
+            byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
 
-        
+            
 
-        sock.SendTo(send_data, ServerEndpoint);
+            sock.SendTo(send_data, ServerEndpoint);
+            helloSent = true;
+        }
+        catch(SocketException ex)
+        {
+            Console.WriteLine("Error in socket connection: ", ex);
+        }
+        catch(Exception ex)
+        {
+            Console.WriteLine("Error in sending Hello!", ex);
+        }
     }
 
     public void ReceiveWelcome(Message? message, EndPoint serverEndpoint)
     {
         Console.WriteLine("Welcome message has been received"); 
+        connectedServer = serverEndpoint;
         SendRequestData(serverEndpoint); 
     }
 
 
     public void SendRequestData(EndPoint serverEndpoint)
     {
-        if (sock != null)
+        if (sock != null && connectedServer != null)
         {
             try
             {
                 Message message = new Message
                 {
                     Type = MessageType.RequestData,
-                    Content = "hamlet.txt"
+                    Content = FileName
                 };
                 
                 byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
+
                 sock?.SendTo(send_data, serverEndpoint);
                 Console.WriteLine("The Requested data message has been sent to the Server.");
                 
@@ -178,9 +240,56 @@ class ClientUDP
         }
     }
 
+    public void HandleFile(string filename)
+    {
+        if (!File.Exists(filename))
+        {
+            try
+            {
+                string filePath = Path.Combine(Directory.GetCurrentDirectory(), filename);
+                using (StreamWriter sw = File.CreateText(filePath))
+                {
+                    foreach (string line in data)
+                    {
+                        if (line.Length >= 4)
+                        {
+                            sw.Write(line.Substring(4));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Data could not been written to the file", ex);
+            }
+        }
+        else
+        {
+            Console.WriteLine("Filename already exists");
+        }
+
+
+    }
+
+    public void ReceiveData()
+    {
+        
+    }
+
     public void SendAck(EndPoint serverEndpoint, string? index)
     {
-        if (index == null) {return;}
+        if (index == null || connectedServer == null) {return;}
+
+        if (!data.Contains(index))
+        {
+            data.Add(index);
+        }
+        else
+        {
+            return;
+        }
+        
+
         try
         {
             Message message = new Message
@@ -190,6 +299,7 @@ class ClientUDP
             };
             byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
             sock?.SendTo(send_data, serverEndpoint);
+            Console.WriteLine($"Sent ACK for: {message.Content}");
         }
         catch (Exception ex)
         {
@@ -198,17 +308,48 @@ class ClientUDP
 
     }
 
+    public void AddData()
+    {
+        try
+        {
+            data.Sort();
+            HandleFile(FileName="hamlet.txt");
+
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("The data could not be added", ex);
+        }
+    }
     public void Terminate()
     {
         try
         {
             Console.WriteLine("The activity will be terminated");
             running = false;
+            connectedServer = null;
         }
         catch (Exception ex)
         {
-            Console.WriteLine("The activity could not bee terminated", ex);
+            Console.WriteLine("The activity could not be terminated", ex);
         }
+    }
+
+    public void SendError(EndPoint ServerEndPoint, string error)
+    {
+        Message msg = new()
+        {
+            Type = MessageType.Error,
+            Content = error
+        };
+
+        byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(msg));
+        try
+        {
+            sock?.SendTo(send_data, ServerEndPoint);
+        }
+        catch {Console.WriteLine("Could not send error to server");}
+        Terminate();
     }
 
     //TODO: [Receive Welcome]

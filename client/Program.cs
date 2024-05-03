@@ -30,6 +30,8 @@ class ClientUDP
     Socket sock { get; set; }
     bool running = false;
 
+    int Index = 0;
+
     //TODO: implement all necessary logic to create sockets and handle incoming messages
     // Do not put all the logic into one method. Create multiple methods to handle different tasks.
     public void start()
@@ -63,10 +65,19 @@ class ClientUDP
     }
     //TODO: create all needed objects for your sockets 
 
-    public void HandleData(Message message, EndPoint clientendpoint)
+    public void HandleData(Message message, EndPoint serverendpoint) // clientendpoint in server endpoint veranderd
     {
         switch(message.Type)
         {
+            case MessageType.Welcome:
+                ReceiveWelcome(message, serverendpoint);
+                break;
+            case MessageType.Data:
+                SendAck(serverendpoint);
+                break;
+            case MessageType.End:
+                Terminate();
+                break;
             default:
                 Console.WriteLine("Invalid message type => Client -> Server");
                 break;
@@ -132,13 +143,69 @@ class ClientUDP
         sock.SendTo(send_data, ServerEndpoint);
     }
 
-    public void ReceiveWelcome(IPEndPoint serverEndpoint)
+    public void ReceiveWelcome(Message? messgae, EndPoint serverEndpoint)
+    {
+        Console.WriteLine("Welcome message has been received"); 
+        SendRequestData(serverEndpoint); 
+    }
+
+
+    public void SendRequestData(EndPoint serverEndpoint)
+    {
+        if (sock != null)
+        {
+            try
+            {
+                Message message = new Message
+                {
+                    Type = MessageType.RequestData,
+                    Content = "hamlet.txt"
+                };
+                
+                byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
+                Index = 0;
+                sock?.SendTo(send_data, serverEndpoint);
+                Console.WriteLine("The Requested data message has been sent to the client, awaiting data request before connecting.");
+                
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("The requested data could not be send to the server", ex);
+            }
+        }
+    }
+
+    public void SendAck(EndPoint serverEndpoint)
     {
         try
         {
-            byte[] buffer = new byte[1000];
-            EndPoint remoteEP = new IPEndPoint(IPAddress.Any, 32000);
-            
+            Message message = new Message
+            {
+                Type = MessageType.Ack,
+                Content = Index.ToString("0000")
+            };
+            Index ++;
+
+            byte[] send_data = Encoding.UTF8.GetBytes(ObjectToJson(message));
+            sock.Send(send_data);
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("The Ack could not be send to the server", ex);
+        }
+
+    }
+
+    public void Terminate()
+    {
+        try
+        {
+        Console.WriteLine("The activity will be terminated");
+        sock.Close();
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("The activity could not bee terminated", ex);
         }
     }
 
@@ -154,5 +221,34 @@ class ClientUDP
 
     //TODO: [Handle Errors]
 
+     /* ASSIGNMENT TO DO
+           The client sends a hello message, the content is a number (default value 20) that represents the threshold. AKA how many message per x it can handle
+           the server sends back an welcome message, this has no content (check validation?)
+           the client sends a RequestData, the content is the filename of a file in the root directory of the server (hamlet.txt)
+           (check if in present in server)
+           the server will send the data (lines from hamlet), this data has to be split into lines or even letters (test and find out ourselves)
+           the server will double the amount of messages with the data sent until it reaches the threshold after which it will stop doubling
+                if the calculated new value is more than the default value, the server will
+                stop doubling the value and continue to send the last known amount
+            data has the following structue:
+                4 numbers that indicate the index of the data (eg 0001)
+                data sent
+            
+            the client sends an ACK everytime the data is recieved. the content is the index of the data (eg 0001)
+            the error message is to communicate to the other party that an error occured, be specific about the error in the content.
+            upon recieving an error the server will reset the communication (and be ready again)
+            the client will terminate, printing the error
+
+            End has no content and marks that the last data was send
+            welcome data and end can only be sent from the server
+            hello requestdata and ack can only be sent from the client.
+        */
+    
+    //TODO: create all needed objects for your sockets 
+
+    //TODO: keep receiving messages from clients
+    // you can call a dedicated method to handle each received type of messages
+
+    //TODO: [Receive Hello]
 
 }

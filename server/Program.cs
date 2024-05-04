@@ -204,7 +204,14 @@ class ServerUDP
             socket = sock;
             Console.Write("SUCCEEDED..Listening on port 32000\n");
         }
-        
+        catch (SocketException ex)
+        {
+            if (ex.SocketErrorCode == SocketError.AddressAlreadyInUse)
+            {
+                Console.WriteLine("Socket could not be created: This port is already in use", ex);
+                running = false;
+            }
+        }
         catch (Exception ex)
         {
             Console.Write("ERROR\n");

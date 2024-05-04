@@ -250,6 +250,7 @@ class ServerUDP
         else if (HelloRecieved == true)
         {
             Console.WriteLine("Server has already recieved an hello!");
+            SendError(clientendpoint,"Server is busy");
         }
     }
     #endregion

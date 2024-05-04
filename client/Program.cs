@@ -145,10 +145,6 @@ class ClientUDP
 
     }
 
-    public void ReceiveData()
-    {
-        
-    }
 
     public void AddData()
     {
@@ -214,6 +210,7 @@ class ClientUDP
         try {
             IPAddress ip = getIP();
             sock = new Socket(ip.AddressFamily, SocketType.Dgram, ProtocolType.Udp);
+
         }
         catch
         {

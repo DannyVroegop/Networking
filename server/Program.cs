@@ -410,6 +410,12 @@ class ServerUDP
                             Console.WriteLine("Final message of type End has been sent");
                         }
                     }
+                    catch (FileNotFoundException ex)
+                    {
+                        Console.WriteLine($"File not found!", ex);
+                        SendError(clientendpoint, $"File not found!");
+                        return;
+                    }
                     catch (Exception ex)
                     {
                         Console.WriteLine(ex);

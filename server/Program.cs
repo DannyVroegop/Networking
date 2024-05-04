@@ -455,21 +455,16 @@ class ServerUDP
                 if (acksegment.ToString("D4").Length == 4 && acksegment > 0)
                 {
                     string tocheck = acksegment.ToString("D4");
+                    acknowledgements.Add(acksegment);
+                    if (acksegment > lastRecievedAck)
+                    {
+                        lastRecievedAck = acksegment+1;
+                    }
                     if (sentmessages.ContainsKey(tocheck))
                     {
-                        acknowledgements.Add(acksegment);
-                        if (acksegment > lastRecievedAck)
-                        {
-                            lastRecievedAck = acksegment+1;
-                        }
                         sentmessages.Remove(tocheck);
-                        Console.WriteLine($"Recieved ACK: {tocheck}");
                     }
-                    else
-                    {
-                        Console.WriteLine("ACK sent before message has been sent?");
-                        SendError(clientendpoint, "ACK sent before message");
-                    }
+                    Console.WriteLine($"Recieved ACK: {tocheck}");
                 }
                 else
                 {

@@ -41,7 +41,7 @@ class ClientUDP
     //TODO: implement all necessary logic to create sockets and handle incoming messages
     // Do not put all the logic into one method. Create multiple methods to handle different tasks.
    
-
+    #region start
     public void start()
     {
         ClearFiles(FileName="hamlet.txt");
@@ -94,7 +94,8 @@ class ClientUDP
         }
     }
     //TODO: create all needed objects for your sockets 
-
+    #endregion
+    #region file
     public void ClearFiles(string filename)
     {
         
@@ -112,6 +113,60 @@ class ClientUDP
         }
 
     }
+    
+     public void HandleFile(string filename)
+    {
+        if (!File.Exists(filename))
+        {
+            try
+            {
+                string filePath = Path.Combine(Directory.GetCurrentDirectory(), filename);
+                using (StreamWriter sw = File.CreateText(filePath))
+                {
+                    foreach (string line in data)
+                    {
+                        if (line.Length >= 4)
+                        {
+                            sw.Write(line.Substring(4));
+                        }
+                    }
+                }
+            }
+            catch (Exception ex)
+            {
+                Console.WriteLine("Data could not been written to the file", ex);
+            }
+        }
+        else
+        {
+            Console.WriteLine("Filename already exists");
+        }
+
+
+    }
+
+    public void ReceiveData()
+    {
+        
+    }
+
+    public void AddData()
+    {
+        try
+        {
+            data.Sort();
+            HandleFile(FileName="hamlet.txt");
+
+        }
+        catch (Exception ex)
+        {
+            Console.WriteLine("The data could not be added", ex);
+        }
+    }
+
+
+    #endregion
+    #region incoming message handling
     public void HandleData(Message? message, EndPoint serverendpoint) // clientendpoint in server endpoint veranderd
     {
         if (message == null) {return;}
@@ -124,8 +179,15 @@ class ClientUDP
                 SendAck(serverendpoint, message.Content);
                 break;
             case MessageType.End:
-                AddData();
-                Terminate();
+                if (connectedServer != null && message.Content == null)
+                {
+                    AddData();
+                    Terminate();
+                }
+                else
+                {
+                    Console.WriteLine("Invalid End message recieved, has content || recieved before being connected");
+                }
                 break;
             case MessageType.Error:
                 Console.WriteLine($"Error from server: {message.Content}");
@@ -136,7 +198,9 @@ class ClientUDP
                 break;
         }
     }
+    #endregion
 
+    #region utility
     public IPAddress getIP()
     {
         string hostName = Dns.GetHostName();
@@ -174,13 +238,13 @@ class ClientUDP
         }
         catch (Exception ex) { Console.WriteLine($"Message: {json} cannot be converted to a Message! [SERVER]", ex); return default;}
     }
-
-    public void SendHello(Socket sock, int threshold = 20)
+    #endregion
+    #region hello sending
+    public void SendHello(Socket sock, int threshold = 20) //default parameter of 20, function in start called with 20 aswell.
     {
         try
         {
             IPAddress iPAddress = getIP();
-
             IPEndPoint ServerEndpoint = new IPEndPoint(iPAddress, 32000);
             IPEndPoint sender = new IPEndPoint(iPAddress, 0);
             EndPoint remoteEP = (EndPoint) sender;
@@ -206,15 +270,30 @@ class ClientUDP
             Console.WriteLine("Error in sending Hello!", ex);
         }
     }
-
+    #endregion
+    #region recieve welcome
     public void ReceiveWelcome(Message? message, EndPoint serverEndpoint)
     {
-        Console.WriteLine("Welcome message has been received"); 
-        connectedServer = serverEndpoint;
-        SendRequestData(serverEndpoint); 
+        if (helloSent == true)
+        {
+            if (message != null && message.Content == null)
+            {
+                Console.WriteLine("Welcome message has been received"); 
+                connectedServer = serverEndpoint;
+                SendRequestData(serverEndpoint);
+            }
+            else
+            {
+                Console.WriteLine("Welcome message not found, OR there is content in the Welcome message.");
+            }
+        }
+        else
+        {
+            Console.WriteLine("Welcome recieved before hello has been sent?");
+        }
     }
-
-
+    #endregion
+    #region send data request
     public void SendRequestData(EndPoint serverEndpoint)
     {
         if (sock != null && connectedServer != null)
@@ -238,47 +317,17 @@ class ClientUDP
                 Console.WriteLine("The requested data could not be send to the server", ex);
             }
         }
-    }
-
-    public void HandleFile(string filename)
-    {
-        if (!File.Exists(filename))
-        {
-            try
-            {
-                string filePath = Path.Combine(Directory.GetCurrentDirectory(), filename);
-                using (StreamWriter sw = File.CreateText(filePath))
-                {
-                    foreach (string line in data)
-                    {
-                        if (line.Length >= 4)
-                        {
-                            sw.Write(line.Substring(4));
-                        }
-                    }
-                }
-            }
-            catch (Exception ex)
-            {
-                Console.WriteLine("Data could not been written to the file", ex);
-            }
-        }
         else
         {
-            Console.WriteLine("Filename already exists");
+            Console.WriteLine("Invalid socket or invalid order (sending before connecting)");
         }
-
-
     }
-
-    public void ReceiveData()
-    {
-        
-    }
-
+    #endregion
+   
+    #region send ack
     public void SendAck(EndPoint serverEndpoint, string? index)
     {
-        if (index == null || connectedServer == null) {return;}
+        if (index == null || connectedServer == null) {Console.WriteLine("Invalid message, or invalid order (sending before connecting");return;}
 
         if (!data.Contains(index))
         {
@@ -299,6 +348,7 @@ class ClientUDP
             };
             byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
             sock?.SendTo(send_data, serverEndpoint);
+            lastActivity = DateTime.Now;
             Console.WriteLine($"Sent ACK for: {message.Content}");
         }
         catch (Exception ex)
@@ -307,34 +357,24 @@ class ClientUDP
         }
 
     }
+    #endregion
 
-    public void AddData()
-    {
-        try
-        {
-            data.Sort();
-            HandleFile(FileName="hamlet.txt");
-
-        }
-        catch (Exception ex)
-        {
-            Console.WriteLine("The data could not be added", ex);
-        }
-    }
+    #region terminate
     public void Terminate()
     {
         try
         {
-            Console.WriteLine("The activity will be terminated");
+            Console.WriteLine("The client will be terminated");
             running = false;
             connectedServer = null;
         }
         catch (Exception ex)
         {
-            Console.WriteLine("The activity could not be terminated", ex);
+            Console.WriteLine("The client could not be terminated", ex);
         }
     }
-
+    #endregion
+    #region error handling
     public void SendError(EndPoint ServerEndPoint, string error)
     {
         Message msg = new()
@@ -351,6 +391,7 @@ class ClientUDP
         catch {Console.WriteLine("Could not send error to server");}
         Terminate();
     }
+    #endregion
 
     //TODO: [Receive Welcome]
 

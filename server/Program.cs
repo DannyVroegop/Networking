@@ -70,7 +70,7 @@ class ServerUDP
         {
             try
             {
-                if (socket.Poll(timeout_time, SelectMode.SelectRead)) //Checks if anything is available on the socket (data etc.) or if anything has been closed/terminated.
+                if (socket.Poll(timeout_time, SelectMode.SelectRead)) //Checks for incoming data.
                 {
                     EndPoint clientendpoint;
                     try{
@@ -255,7 +255,6 @@ class ServerUDP
             Message message = new()
             {
                 Type = MessageType.Welcome,
-                Content = ""
             };
             byte[] send_data = Encoding.ASCII.GetBytes(ObjectToJson(message));
             socket?.SendTo(send_data, clientendpoint);
@@ -333,7 +332,6 @@ class ServerUDP
 
                                             segmentindex++;
                                             totalsegment++;
-                                            Thread.Sleep(7000);
                                             //bytestoread = sr.Read(buffer, 0, segmentsize);
                                         }
                                         else
@@ -343,7 +341,7 @@ class ServerUDP
                                         }
                                         try
                                         {
-                                            if (socket != null && socket.Poll(0, SelectMode.SelectRead))
+                                            if (socket != null && socket.Poll(0, SelectMode.SelectRead)) //continue getting data while sending messages
                                             {
                                                 byte[] recvBuffer = new byte[1000];
                                                 int bytesReceived = socket.ReceiveFrom(recvBuffer, ref clientendpoint);
@@ -369,7 +367,7 @@ class ServerUDP
                                 waitData = true;
                                 try
                                 {
-                                    if (socket != null && socket.Poll(0, SelectMode.SelectRead))
+                                    if (socket != null && socket.Poll(0, SelectMode.SelectRead)) //continue checking for data while waiting for the timeout
                                     {
                                         byte[] recvBuffer = new byte[1000];
                                         int bytesReceived = socket.ReceiveFrom(recvBuffer, ref clientendpoint);
@@ -390,8 +388,15 @@ class ServerUDP
                                     endofFile = true;
                                     return;
                                 }
-                                HandleTimer(clientendpoint);
-                                
+                                if (!clientConnected || connectedClient == null)
+                                {
+                                    EndConnection(connectedClient);
+                                    return;
+                                }
+                                else
+                                {
+                                    HandleTimer(clientendpoint);
+                                }
                             }
                             //When all data has been read and sent, send the end message to client and set allDataSent to true for the ACK timer.
                             Console.WriteLine("Preparing to send End message...");
@@ -447,24 +452,35 @@ class ServerUDP
             int acksegment;
             if (int.TryParse(message.Content, out acksegment))
             {
-                acknowledgements.Add(acksegment);
-                
-                if (acksegment > lastRecievedAck)
+                if (acksegment.ToString("D4").Length == 4 && acksegment > 0)
                 {
-                    lastRecievedAck = acksegment+1;
+                    string tocheck = acksegment.ToString("D4");
+                    if (sentmessages.ContainsKey(tocheck))
+                    {
+                        acknowledgements.Add(acksegment);
+                        if (acksegment > lastRecievedAck)
+                        {
+                            lastRecievedAck = acksegment+1;
+                        }
+                        sentmessages.Remove(tocheck);
+                        Console.WriteLine($"Recieved ACK: {tocheck}");
+                    }
+                    else
+                    {
+                        Console.WriteLine("ACK sent before message has been sent?");
+                        SendError(clientendpoint, "ACK sent before message");
+                    }
                 }
-
-                string tocheck = acksegment.ToString("D4");
-                if (sentmessages.ContainsKey(tocheck))
+                else
                 {
-                    sentmessages.Remove(tocheck);
+                    Console.WriteLine("Invalid format for ACK recieved! invalid length on index!");
+                    SendError(clientendpoint, "Invalid ACK format, invalid length on index");
                 }
-                Console.WriteLine($"Recieved ACK: {tocheck}");
             }
             else
             {
-                Console.WriteLine("Invalid format for ACK recieved!");
-                SendError(clientendpoint, "Invalid ACK format");
+                Console.WriteLine("Invalid format for ACK recieved! Contains non-digit");
+                SendError(clientendpoint, "Invalid ACK format, Contains non-digit");
             }
         }
     }
@@ -537,18 +553,15 @@ class ServerUDP
     //terminate connection function, reinstate socket
     public void EndConnection(EndPoint? clientendpoint)
     {
-        if (connectedClient == clientendpoint)
-        {
-            connectedClient = null;
-            clientConnected = false;
-            congestionwindow = 1;
-            clientThreshold = 0;
-            sentmessages.Clear();
-            acknowledgements.Clear();
-            waitData = false;
-            lastRecievedAck = 0;
-            endofFile = false;
-        }
+        connectedClient = null;
+        clientConnected = false;
+        congestionwindow = 1;
+        clientThreshold = 0;
+        sentmessages.Clear();
+        acknowledgements.Clear();
+        waitData = false;
+        lastRecievedAck = 0;
+        endofFile = false;
         HelloRecieved = false;
         sentmessages.Clear();
 

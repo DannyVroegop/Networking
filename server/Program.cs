@@ -204,6 +204,7 @@ class ServerUDP
             socket = sock;
             Console.Write("SUCCEEDED..Listening on port 32000\n");
         }
+        
         catch (Exception ex)
         {
             Console.Write("ERROR\n");
@@ -509,7 +510,7 @@ class ServerUDP
                 {
                     // string contentToSend = sentmessages[index.ToString("D4")];
                     //ResendData(contentToSend, index, clientendpoint);
-                   lastRecievedAck = missingACK.First();
+                   lastRecievedAck = missingACK.First()-1;
                    Console.WriteLine($"ACK missing, resetting congestionwindow, lastack: {lastRecievedAck}");
                 }
             }
